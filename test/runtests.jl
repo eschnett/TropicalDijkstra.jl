@@ -78,5 +78,3 @@ end
         @test any(x[js] .== Inf)
     end
 end
-
-@time TropicalDijkstra.main()
