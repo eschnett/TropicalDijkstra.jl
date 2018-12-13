@@ -49,7 +49,7 @@ end
 function Base.map!(f::Function, rs::BoolVector, xs::BoolVector)
     n = length(rs)
     @assert length(xs) >= n
-    @inbounds @simd ivdep for i in 1:n
+    @inbounds for i in 1:n
         rs[i] = f(xs[i])
     end
     rs
@@ -60,7 +60,7 @@ end
 function Base.map!(::typeof(~), rs::BoolVector, xs::BoolVector)
     n = length(rs)
     @assert length(xs) == n
-    @inbounds @simd ivdep for i in eachindex(rs.elts)
+    @inbounds for i in eachindex(rs.elts)
         rs.elts[i] = ~ xs.elts[i]
     end
     rs
@@ -69,7 +69,7 @@ function Base.map!(f::Function, rs::BoolVector, xs::BoolVector, ys::BoolVector)
     n = length(rs)
     @assert length(xs) >= n
     @assert length(ys) >= n
-    @inbounds @simd ivdep for i in 1:n
+    @inbounds for i in 1:n
         rs[i] = f(xs[i], ys[i])
     end
     rs
@@ -106,7 +106,7 @@ end
 function Base.mapreduce(f::Function, op::Function, xs::BoolVector; init)
     n = length(xs)
     r = init
-    @inbounds @simd ivdep for i in 1:n
+    @inbounds for i in 1:n
         r = f(r, op(xs.elts[i]))
     end
     r
@@ -137,18 +137,18 @@ function matmul_or_and(f::Function,
 
     # @inbounds for i in 1:m
     #     s = false
-    #     @simd ivdep for j in 1:n
+    #     for j in 1:n
     #         s = s | f(j, i, A[j,i]) & x[j]
     #     end
     #     r[i] = s
     # end
 
-    @inbounds @simd ivdep for i in 1:m
+    @inbounds for i in 1:m
         r[i] = false
     end
     @inbounds for j in 1:n
         if x[j]
-            @simd ivdep for i in 1:m
+            for i in 1:m
                 r[i] |= f(i, j, A[i,j])
             end
         end
@@ -165,7 +165,7 @@ function matmul_or_and(f::Function,
     rs = similar(xs, p, m)
 
     @inbounds for i in 1:m
-        @simd ivdep for k in 1:p
+        for k in 1:p
             rs[k,i] = false
         end
     end
@@ -178,7 +178,7 @@ function matmul_or_and(f::Function,
             for i in 1:m
                 y = f(i, j, A[i,j])
                 if y
-                    @simd ivdep for k in 1:p
+                    for k in 1:p
                         rs[k,i] |= xs[k,j]
                     end
                 end
@@ -641,12 +641,14 @@ function main()
     # @assert all(x)
 
     println("find paths G")
+    # Choose a point and its neighbours
     i = rand(1:n)
     # is = [i]
     is = falses(n)
     is[i] = true
     is = is .| matmul_or_and(identity3, G, is)
     is = [i for (i,b) in enumerate(is) if b]
+    # is = [j for j in 1:n if j==i || G[j,i]]
     # js = rand(n) .< 10.0/n
     # Choose a point and its neighbours
     j = rand(1:n)
