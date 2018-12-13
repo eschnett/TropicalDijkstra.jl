@@ -23,6 +23,16 @@ inv3(i,j,x) = inv(x)
     x = BitArray(rand(Bool, 5))
     r = matmul_or_and(identity3, G, x)
     @test Array(r) == (Array(G * x) .!= 0)
+
+    xs = reshape(x, 1, 5)
+    rs = matmul_or_and(identity3, G, xs)
+    @test Array(reshape(rs, 4)) == (Array(G * x) .!= 0)
+
+    xs = BitArray(rand(Bool, 3, 5))
+    rs = matmul_or_and(identity3, G, xs)
+    for k in 1:3
+        @test Array(rs[k,:]) == (Array(G * xs[k,:]) .!= 0)
+    end
 end
 
 
@@ -88,6 +98,34 @@ end
     G = rand(100, 100) .< 0.1
     i = rand(1:100)
     js = rand(100) .< 0.1
+    x = find_shortest_paths(inv3, G, i, js)
+    if all(find_connected_component(identity3, G))
+        @test all(x[js] .< Inf)
+    else
+        @test any(x[js] .== Inf)
+    end
+end
+
+@testset "find_shortest_paths (multiple destinations)" begin
+    G = BitArray([1 1 0 0 0;
+                  0 1 1 0 0;
+                  0 0 1 1 0;
+                  0 0 0 1 1;
+                  0 0 0 0 1])
+    x = find_shortest_paths(inv3, G, 1, [1])
+    @test isequal(x, [0.0, Inf, Inf, Inf, Inf])
+
+    G = BitArray([1 0 0 0 0;
+                  1 1 0 0 0;
+                  0 1 1 0 0;
+                  0 0 1 1 0;
+                  0 0 0 1 1])
+    x = find_shortest_paths(inv3, G, 1, [3])
+    @test isequal(x, [0.0, 1.0, 2.0, 3.0, Inf])
+
+    G = rand(100, 100) .< 0.1
+    i = rand(1:100)
+    js = map(x->x[1], filter(x->x[2] < 0.1, collect(enumerate(rand(100)))))
     x = find_shortest_paths(inv3, G, i, js)
     if all(find_connected_component(identity3, G))
         @test all(x[js] .< Inf)
