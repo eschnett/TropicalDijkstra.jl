@@ -182,7 +182,7 @@ function matmul_plus_times(f::Function,
 end
 
 export matmul_min_plus
-@inline function matmul_min_plus(f::Function,
+function matmul_min_plus(f::Function,
                          A::AbstractArray{<:Real, 2},
                          x::AbstractArray{<:Real, 1})
     m, n = size(A)
@@ -341,13 +341,6 @@ function find_shortest_paths(f::Function,
 
     iter = 0
     while true
-        iter += 1
-        println("Iteration: $iter")
-        println("    interior points: $(count(interior))")
-        println("    boundary points: $(count(boundary))")
-        println("    visited destinations: $(all(dst .<= visited))")
-        println("    destinations are interior: $(all(dst .<= interior))")
-
         olddists = dists
         oldinterior = interior
         oldvisited = visited
@@ -357,6 +350,13 @@ function find_shortest_paths(f::Function,
 
         interior = oldvisited
         boundary = visited .> interior
+
+        iter += 1
+        println("Iteration: $iter")
+        println("    interior points: $(count(interior))")
+        println("    boundary points: $(count(boundary))")
+        println("    visited destinations: $(all(dst .<= visited))")
+        println("    destinations are interior: $(all(dst .<= interior))")
 
         # The termination condition is:
         # - destination vertex is in the interior
@@ -383,7 +383,7 @@ inv3(i,j,x) = x ? 1.0 : Inf
 
 function main()
     println("setup G")
-    n = 2^17
+    n = 2^16
 
     G = BitArray(undef, n, n)
     di = dj = 256               # to fit into L1 data cache size
@@ -411,7 +411,11 @@ function main()
 
     println("find paths G")
     i = rand(1:n)
-    js = rand(n) .< 10.0/n
+    # js = rand(n) .< 10.0/n
+    j = rand(1:n)
+    js = falses(n)
+    js[j] = true
+    js = js .| matmul_or_and(identity3, G, js)
     @time x = find_shortest_paths(inv3, G, i, js)
     # @show x
     # @show i x[i]
