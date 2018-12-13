@@ -2,15 +2,30 @@ using Test
 
 using TropicalDijkstra
 
+
+
+@testset "BoolVector" begin
+    xs = BoolVector(undef, 5)
+    fill!(xs, false)
+    ys = BoolVector(undef, 5)
+    copyto!(ys, xs)
+    zs = BoolVector(undef, 5)
+    map!(xor, zs, ys, xs)
+end
+
+
+
 identity3(i,j,x) = identity(x)
 inv3(i,j,x) = inv(x)
 
-@testset "matmul" begin
+@testset "matmul (and, or)" begin
     G = BitArray(rand(Bool, 5, 4))
     x = BitArray(rand(Bool, 5))
     r = matmul_or_and(identity3, G, x)
     @test Array(r) == (Array(G' * x) .!= 0)
 end
+
+
 
 @testset "find_connected_component" begin
     G = BitArray([1 1 1; 1 1 0; 1 0 1])
@@ -24,7 +39,9 @@ end
     @test x == BitArray([0, 0, 1])
 end
 
-@testset "find_shortest_paths" begin
+
+
+@testset "find_shortest_paths (single destination)" begin
     G = BitArray([1 0 0 0 0;
                   1 1 0 0 0;
                   0 1 1 0 0;
@@ -51,7 +68,7 @@ end
     end
 end
 
-@testset "find_shortest_paths" begin
+@testset "find_shortest_paths (multiple destinations)" begin
     G = BitArray([1 0 0 0 0;
                   1 1 0 0 0;
                   0 1 1 0 0;

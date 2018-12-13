@@ -5,6 +5,120 @@ module TropicalDijkstra
 
 using LinearAlgebra
 
+
+
+export BoolVector
+struct BoolVector <: AbstractArray{Bool, 1}
+    elts::Vector{UInt64}
+    size::Int
+    BoolVector(::UndefInitializer, size::Int) =
+        new(Vector{UInt64}(undef, cld(size, 64)), size)
+end
+
+# Base.length(xs::BoolVector) = xs.size
+Base.size(xs::BoolVector) = (xs.size, )
+
+Base.getindex(xs::BoolVector, i::Int) = getindex(xs, i % UInt)
+@inline function Base.getindex(xs::BoolVector, i::UInt)
+    @inbounds (xs.elts[i ÷ 0x40] >> (i % 0x40)) != 0
+end
+
+Base.setindex!(xs::BoolVector, x::Bool, i::Int) = setindex!(xs, x, i % UInt)
+@inline function Base.setindex!(xs::BoolVector, x::Bool, i::UInt)
+    msk = ~ (UInt64(0x1) << (i % 0x40))
+    bit = UInt64(x) << (i % 0x40)
+    @inbounds xs.elts[i ÷ 0x40] = xs.elts[i ÷ 0x40] & msk | bit
+end
+
+function Base.fill!(rs::BoolVector, x::Bool)
+    fill!(rs.elts, x ? ~ UInt64(0) : UInt64(0))
+    rs
+end
+
+function Base.copyto!(rs::BoolVector, xs::BoolVector)
+    n = length(rs)
+    @assert length(xs) == n
+    copyto!(rs.elts, xs.elts)
+    rs
+end
+
+function Base.map!(f::Function, rs::BoolVector, xs::BoolVector)
+    n = length(rs)
+    @assert length(xs) >= n
+    @inbounds @simd for i in 1:n
+        rs[i] = f(xs[i])
+    end
+    rs
+end
+function Base.map!(::typeof(identity), rs::BoolVector, xs::BoolVector)
+    copyto!(rs, xs)
+end
+function Base.map!(::typeof(~), rs::BoolVector, xs::BoolVector)
+    n = length(rs)
+    @assert length(xs) == n
+    @inbounds @simd for i in eachindex(rs.elts)
+        rs.elts[i] = ~ xs.elts[i]
+    end
+    rs
+end
+function Base.map!(f::Function, rs::BoolVector, xs::BoolVector, ys::BoolVector)
+    n = length(rs)
+    @assert length(xs) >= n
+    @assert length(ys) >= n
+    @inbounds @simd for i in 1:n
+        rs[i] = f(xs[i], ys[i])
+    end
+    rs
+end
+function Base.map!(::typeof(&), rs::BoolVector, xs::BoolVector, ys::BoolVector)
+    n = length(rs)
+    @assert length(xs) >= n
+    @assert length(ys) >= n
+    @inbounds @simd for i in eachindex(rs.elts)
+        rs.elts[i] = xs.elts[i] & ys.elts[i]
+    end
+    rs
+end
+function Base.map!(::typeof(|), rs::BoolVector, xs::BoolVector, ys::BoolVector)
+    n = length(rs)
+    @assert length(xs) >= n
+    @assert length(ys) >= n
+    @inbounds @simd for i in eachindex(rs.elts)
+        rs.elts[i] = xs.elts[i] | ys.elts[i]
+    end
+    rs
+end
+function Base.map!(::typeof(xor),
+                   rs::BoolVector, xs::BoolVector, ys::BoolVector)
+    n = length(rs)
+    @assert length(xs) >= n
+    @assert length(ys) >= n
+    @inbounds @simd for i in eachindex(rs.elts)
+        rs.elts[i] = xor(xs.elts[i], ys.elts[i])
+    end
+    rs
+end
+
+function Base.mapreduce(f::Function, op::Function, xs::BoolVector; init)
+    n = length(xs)
+    r = init
+    @inbounds @simd for i in 1:n
+        r = f(r, op(xs.elts[i]))
+    end
+    r
+end
+function Base.mapreduce(f::Function, op, xs::BoolVector, ys::BoolVector; init)
+    n = length(xs)
+    @assert length(ys) >= n
+    r = init
+    @inbounds @simd for i in 1:n
+        r = f(r, op(xs.elts[i], ys.elts[i]))
+    end
+    r
+end
+
+
+
 export matmul_or_and
 function matmul_or_and(f::Function,
                        A::AbstractArray{Bool, 2},
@@ -14,7 +128,7 @@ function matmul_or_and(f::Function,
     r = similar(x, m)
     @inbounds for i in 1:m
         s = false
-        for j in 1:n
+        @simd for j in 1:n
             s = s | f(j, i, A[j,i]) & x[j]
         end
         r[i] = s
@@ -32,7 +146,7 @@ function matmul_plus_times(f::Function,
     r = similar(x, R, m)
     @inbounds for i in 1:m
         s = R(0)
-        for j in 1:n
+        @simd for j in 1:n
             s = s + f(j, i, A[j,i]) * x[j]
         end
         r[i] = s
@@ -50,7 +164,7 @@ export matmul_min_plus
     r = similar(x, R, m)
     @inbounds for i in 1:m
         s = R(Inf)
-        for j in 1:n
+        @simd for j in 1:n
             s = min(s, f(j, i, A[j,i]) + x[j])
         end
         r[i] = s
@@ -188,10 +302,10 @@ function find_shortest_paths(f::Function,
     while true
         iter += 1
         println("Iteration: $iter")
-        println("  interior: $(count(interior))")
-        println("  boundary: $(count(boundary))")
-        println("  visited destinations: $(all(dst .<= visited))")
-        println("  destinations are interior: $(all(dst .<= interior))")
+        println("    interior points: $(count(interior))")
+        println("    boundary points: $(count(boundary))")
+        println("    visited destinations: $(all(dst .<= visited))")
+        println("    destinations are interior: $(all(dst .<= interior))")
 
         olddists = dists
         oldinterior = interior
@@ -251,8 +365,10 @@ function main()
     dj = 256                    # to fit into L1 data cache size
     @inbounds for j0 in 1:dj:n, i0 in 1:di:n
         i0 == 1 && j0 % 1024 == 1 && println("  $j0/$n")
-        for j in j0:min(j0+dj-1,n), i in i0:min(i0+di-1,n)
-            G[i,j] |= G[j,i]
+        for j in j0:min(j0+dj-1,n)
+            @simd for i in i0:min(i0+di-1,n)
+                G[i,j] |= G[j,i]
+            end
         end
     end
 
