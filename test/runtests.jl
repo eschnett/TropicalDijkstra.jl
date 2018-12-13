@@ -19,10 +19,10 @@ identity3(i,j,x) = identity(x)
 inv3(i,j,x) = inv(x)
 
 @testset "matmul (and, or)" begin
-    G = BitArray(rand(Bool, 5, 4))
+    G = BitArray(rand(Bool, 4, 5))
     x = BitArray(rand(Bool, 5))
     r = matmul_or_and(identity3, G, x)
-    @test Array(r) == (Array(G' * x) .!= 0)
+    @test Array(r) == (Array(G * x) .!= 0)
 end
 
 
@@ -42,19 +42,19 @@ end
 
 
 @testset "find_shortest_paths (single destination)" begin
-    G = BitArray([1 0 0 0 0;
-                  1 1 0 0 0;
-                  0 1 1 0 0;
-                  0 0 1 1 0;
-                  0 0 0 1 1])
-    x = find_shortest_paths(inv3, G, 1, 1)
-    @test isequal(x, [0.0, Inf, Inf, Inf, Inf])
-
     G = BitArray([1 1 0 0 0;
                   0 1 1 0 0;
                   0 0 1 1 0;
                   0 0 0 1 1;
                   0 0 0 0 1])
+    x = find_shortest_paths(inv3, G, 1, 1)
+    @test isequal(x, [0.0, Inf, Inf, Inf, Inf])
+
+    G = BitArray([1 0 0 0 0;
+                  1 1 0 0 0;
+                  0 1 1 0 0;
+                  0 0 1 1 0;
+                  0 0 0 1 1])
     x = find_shortest_paths(inv3, G, 1, 3)
     @test isequal(x, [0.0, 1.0, 2.0, 3.0, Inf])
 
@@ -69,19 +69,19 @@ end
 end
 
 @testset "find_shortest_paths (multiple destinations)" begin
-    G = BitArray([1 0 0 0 0;
-                  1 1 0 0 0;
-                  0 1 1 0 0;
-                  0 0 1 1 0;
-                  0 0 0 1 1])
-    x = find_shortest_paths(inv3, G, 1, BitArray([1, 0, 0, 0, 0]))
-    @test isequal(x, [0.0, Inf, Inf, Inf, Inf])
-
     G = BitArray([1 1 0 0 0;
                   0 1 1 0 0;
                   0 0 1 1 0;
                   0 0 0 1 1;
                   0 0 0 0 1])
+    x = find_shortest_paths(inv3, G, 1, BitArray([1, 0, 0, 0, 0]))
+    @test isequal(x, [0.0, Inf, Inf, Inf, Inf])
+
+    G = BitArray([1 0 0 0 0;
+                  1 1 0 0 0;
+                  0 1 1 0 0;
+                  0 0 1 1 0;
+                  0 0 0 1 1])
     x = find_shortest_paths(inv3, G, 1, BitArray([0, 0, 1, 0, 0]))
     @test isequal(x, [0.0, 1.0, 2.0, 3.0, Inf])
 

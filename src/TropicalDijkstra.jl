@@ -123,16 +123,29 @@ export matmul_or_and
 function matmul_or_and(f::Function,
                        A::AbstractArray{Bool, 2},
                        x::AbstractArray{Bool, 1})
-    n, m = size(A)
+    m, n = size(A)
     @assert size(x, 1) == n
     r = similar(x, m)
-    @inbounds for i in 1:m
-        s = false
-        @simd for j in 1:n
-            s = s | f(j, i, A[j,i]) & x[j]
-        end
-        r[i] = s
+
+    # @inbounds for i in 1:m
+    #     s = false
+    #     @simd for j in 1:n
+    #         s = s | f(j, i, A[j,i]) & x[j]
+    #     end
+    #     r[i] = s
+    # end
+
+    @inbounds @simd for i in 1:m
+        r[i] = false
     end
+    @inbounds for j in 1:n
+        if x[j]
+            @simd for i in 1:m
+                r[i] |= f(i, j, A[i,j])
+            end
+        end
+    end
+
     r
 end
 
@@ -140,17 +153,31 @@ export matmul_plus_times
 function matmul_plus_times(f::Function,
                            A::AbstractArray{<:Real, 2},
                            x::AbstractArray{<:Real, 1})
-    n, m = size(A)
+    m, n = size(A)
     @assert size(x, 1) == n
     R = promote_type(eltype(A), eltype(x))
     r = similar(x, R, m)
-    @inbounds for i in 1:m
-        s = R(0)
-        @simd for j in 1:n
-            s = s + f(j, i, A[j,i]) * x[j]
-        end
-        r[i] = s
+
+    # @inbounds for i in 1:m
+    #     s = R(0)
+    #     @simd for j in 1:n
+    #         s = s + f(j, i, A[j,i]) * x[j]
+    #     end
+    #     r[i] = s
+    # end
+
+    @inbounds @simd for i in 1:m
+        r[i] = R(0)
     end
+    @inbounds for j in 1:n
+        xj = x[j]
+        if xj != R(0)
+            @simd for i in 1:m
+                r[i] += f(i, j, A[i,j]) * xj
+            end
+        end
+    end
+
     r
 end
 
@@ -158,17 +185,31 @@ export matmul_min_plus
 @inline function matmul_min_plus(f::Function,
                          A::AbstractArray{<:Real, 2},
                          x::AbstractArray{<:Real, 1})
-    n, m = size(A)
+    m, n = size(A)
     @assert size(x, 1) == n
     R = promote_type(eltype(A), eltype(x))
     r = similar(x, R, m)
-    @inbounds for i in 1:m
-        s = R(Inf)
-        @simd for j in 1:n
-            s = min(s, f(j, i, A[j,i]) + x[j])
-        end
-        r[i] = s
+
+    # @inbounds for i in 1:m
+    #     s = R(Inf)
+    #     @simd for j in 1:n
+    #         s = min(s, f(j, i, A[j,i]) + x[j])
+    #     end
+    #     r[i] = s
+    # end
+
+    @inbounds @simd for i in 1:m
+        r[i] = R(Inf)
     end
+    @inbounds for j in 1:n
+        xj = x[j]
+        if xj != R(Inf)
+            @simd for i in 1:m
+                r[i] = min(r[i], f(i, j, A[i,j]) + xj)
+            end
+        end
+    end
+
     r
 end
 
@@ -335,19 +376,21 @@ end
 
 
 
-identity3(i,j,x) = identity(x)
+# identity3(i,j,x) = identity(x)
+identity3(i,j,x) = x
 # inv3(i,j,x) = inv(x)
 inv3(i,j,x) = x ? 1.0 : Inf
 
 function main()
     println("setup G")
     n = 2^17
-    # G = rand(n, n) .< 3.0/n
-    G = falses(n, n)
-    @inbounds for j in 1:n
-        j % 1024 == 1 && println("  $j/$n")
-        for i in 1:n
-            G[i,j] = rand() < 0.1
+
+    G = BitArray(undef, n, n)
+    di = dj = 256               # to fit into L1 data cache size
+    @inbounds for j0 in 1:dj:n, i0 in 1:di:j0
+        i0 == 1 && j0 % 1024 == 1 && println("  $j0/$n")
+        for j in j0:min(j0+dj-1,n), i in i0:min(i0+di-1,j)
+            G[i,j] = G[j,i] = rand() < 0.05
         end
     end
 
@@ -357,19 +400,9 @@ function main()
         j = rand(i+1:n)
         ps[i],ps[j] = ps[j],ps[i]
     end
-    for i in 1:n-1
-        G[ps[i],ps[i+1]] = true
-    end
-    G[ps[n],ps[1]] = true
-    di = 512                    # one cache line
-    dj = 256                    # to fit into L1 data cache size
-    @inbounds for j0 in 1:dj:n, i0 in 1:di:n
-        i0 == 1 && j0 % 1024 == 1 && println("  $j0/$n")
-        for j in j0:min(j0+dj-1,n)
-            @simd for i in i0:min(i0+di-1,n)
-                G[i,j] |= G[j,i]
-            end
-        end
+    for m in 1:n
+        i, j = ps[m], ps[m == n ? 1 : m + 1]
+        G[i,j] = G[j,i] = true
     end
 
     # println("check simply-connect G")
@@ -379,7 +412,7 @@ function main()
     println("find paths G")
     i = rand(1:n)
     js = rand(n) .< 10.0/n
-    x = find_shortest_paths(inv3, G, i, js)
+    @time x = find_shortest_paths(inv3, G, i, js)
     # @show x
     # @show i x[i]
     println(x[js])
